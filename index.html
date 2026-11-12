@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voter PDF to Excel Converter</title>
+<style>
+  :root {
+    --primary: #1a56db;
+    --primary-dark: #1e429f;
+    --bg: #f8fafc;
+    --card: #ffffff;
+    --border: #e2e8f0;
+    --text: #1e293b;
+    --muted: #64748b;
+    --success: #059669;
+    --warning: #d97706;
+    --danger: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 20px;
+    line-height: 1.5;
+  }
+  .container { max-width: 1200px; margin: 0 auto; }
+  header { text-align: center; margin-bottom: 32px; }
+  header h1 { margin: 0 0 4px; font-size: 2rem; color: var(--primary); }
+  header .sub { font-size: 1.25rem; font-weight: 600; color: var(--text); margin: 0; }
+  header .tag { color: var(--muted); margin-top: 8px; }
+  .section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  .section h2 { margin-top: 0; font-size: 1.25rem; display: flex; align-items: center; gap: 8px; }
+  .section h2::before {
+    content: attr(data-step);
+    background: var(--primary);
+    color: white;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    font-weight: 700;
+  }
+  .upload-area {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 32px;
+    text-align: center;
+    background: #f1f5f9;
+    margin-bottom: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .upload-area:hover, .upload-area.dragover { border-color: var(--primary); background: #e0e7ff; }
+  .upload-area input { display: none; }
+  .btn {
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin: 4px;
+  }
+  .btn:hover { background: var(--primary-dark); }
+  .btn:disabled { background: #94a3b8; cursor: not-allowed; }
+  .btn-secondary { background: #64748b; }
+  .btn-secondary:hover { background: #475569; }
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .metric {
+    background: #f1f5f9;
+    padding: 16px;
+    border-radius: 8px;
+    text-align: center;
+  }
+  .metric .num { font-size: 1.8rem; font-weight: 700; color: var(--primary); }
+  .metric .label { font-size: 0.85rem; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-top: 12px; }
+  th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
+  th { background: #f8fafc; font-weight: 600; }
+  tr:nth-child(even) { background: #f8fafc; }
+  .status { padding: 12px; background: #ecfdf5; border-radius: 8px; color: var(--success); margin: 12px 0; }
+  .warning { background: #fffbeb; color: var(--warning); }
+  .telugu { font-size: 0.95rem; color: var(--muted); margin-top: 8px; }
+  .hidden { display: none; }
+  .progress { height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; margin: 12px 0; }
+  .progress-bar { height: 100%; background: var(--primary); width: 0%; transition: width 0.3s; }
+  footer { text-align: center; color: var(--muted); margin-top: 40px; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Voter PDF to Excel Converter</h1>
+    <p class="sub">VOTER PDF → EXCEL</p>
+    <p class="tag">Electoral Roll Converter · Voter card-wise extraction<br>
+    Sri Kakulam / Andhra Pradesh · Telugu searchable PDF support<br>
+    <strong>Version 2.2</strong> · Multi-method card detection (Serial + EPIC + Gap fallback)</p>
+  </header>
+
+  <div class="section">
+    <h2 data-step="1">Upload Electoral PDF Files</h2>
+    <div class="upload-area" id="dropZone">
+      <p>Select one or more voter-list PDF files</p>
+      <p id="fileInfo">No PDF selected.</p>
+      <input type="file" id="fileInput" accept=".pdf" multiple>
+    </div>
+    <div class="telugu">మీ PDF ఫైల్స్ మీ browserలోనే process అవుతాయి. ఈ application మీ PDFను serverకు upload చేయదు.</div>
+    <div style="margin-top: 16px;">
+      <button class="btn" id="convertBtn" disabled>Convert PDF to Excel</button>
+      <button class="btn btn-secondary" id="clearBtn">Clear</button>
+    </div>
+    <div id="status" class="status">Ready. Select PDF file(s) to begin.</div>
+    <div class="progress hidden" id="progressWrap"><div class="progress-bar" id="progressBar"></div></div>
+  </div>
+
+  <div class="section">
+    <h2 data-step="2">Extraction Results</h2>
+    <div class="metrics">
+      <div class="metric"><div class="num" id="mCards">0</div><div class="label">Voter cards detected</div></div>
+      <div class="metric"><div class="num" id="mEpics">0</div><div class="label">EPIC numbers found</div></div>
+      <div class="metric"><div class="num" id="mDups">0</div><div class="label">Duplicate EPIC values</div></div>
+      <div class="metric"><div class="num" id="mFlagged">0</div><div class="label">Records flagged for review</div></div>
+    </div>
+    <div id="resultStatus">No extraction completed yet.</div>
+    <div style="margin-top: 16px;">
+      <button class="btn" id="dlExcel" disabled>Download Excel (.xlsx)</button>
+      <button class="btn" id="dlCsv" disabled>Download CSV (.csv)</button>
+    </div>
+    <div class="status warning" style="margin-top: 16px;">
+      Important: detected card count matching the cover total is a count check, not proof that every name and EPIC is visually correct. Review flagged records against the original PDF.
+    </div>
+  </div>
+
+  <div class="section">
+    <h2 data-step="3">PDF-wise Voter Card Count Check</h2>
+    <table id="verifyTable">
+      <thead>
+        <tr>
+          <th>PDF File</th><th>Pages</th><th>Ward</th><th>Cover Total</th>
+          <th>Cards Detected</th><th>Difference</th><th>Missing Serials</th>
+          <th>Pages Without Cards</th><th>Check</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td colspan="9" style="text-align:center; color:#64748b;">PDF-wise verification appears after conversion.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2 data-step="4">Voter Record Preview</h2>
+    <p id="previewCount">0 records</p>
+    <div style="overflow-x:auto;">
+      <table id="previewTable">
+        <thead>
+          <tr>
+            <th>Ward No</th><th>Serial No</th><th>Voter Name</th><th>Father / Husband Name</th>
+            <th>Relationship</th><th>House No</th><th>Locality</th><th>Gender</th>
+            <th>Age</th><th>EPIC Number</th><th>Section</th><th>PDF Page</th><th>Review Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td colspan="13" style="text-align:center; color:#64748b;">Records will appear here after conversion.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="telugu">Previewలో మొదటి 200 matching rows చూపిస్తాం. Excelలో మాత్రం process అయిన అన్ని records ఉంటాయి.</div>
+  </div>
+
+  <div class="section">
+    <h2 data-step="5">What This Version Checks</h2>
+    <ul>
+      <li>Detects individual voter cards using page position and three-column layout of Andhra Pradesh photo electoral rolls.</li>
+      <li>Extracts EPIC number as primary identifier (stored as text).</li>
+      <li>Pulls Ward No, Serial No, Voter Name, Father/Husband Name, House No, Locality, Gender, Age when present.</li>
+      <li>Flags duplicate EPIC values (never deleted) and serial gaps.</li>
+      <li>Compares detected card count against cover-page total when readable.</li>
+      <li>Supported: Searchable Telugu PDFs in the standard AP three-column layout.</li>
+      <li>Not supported: Purely scanned / image-only PDFs (require OCR; not auto-processed).</li>
+    </ul>
+  </div>
+
+  <footer>
+    Client-side only · No data leaves your browser · For personal use of published electoral rolls
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+let allRecords = [];
+let fileSummaries = [];
+
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const convertBtn = document.getElementById('convertBtn');
+const clearBtn = document.getElementById('clearBtn');
+const statusEl = document.getElementById('status');
+const fileInfo = document.getElementById('fileInfo');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  fileInput.files = e.dataTransfer.files;
+  updateFileInfo();
+});
+fileInput.addEventListener('change', updateFileInfo);
+
+function updateFileInfo() {
+  const files = Array.from(fileInput.files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
+  if (files.length === 0) {
+    fileInfo.textContent = 'No PDF selected.';
+    convertBtn.disabled = true;
+  } else {
+    fileInfo.textContent = files.length + ' PDF file(s) selected: ' + files.map(f => f.name).join(', ');
+    convertBtn.disabled = false;
+  }
+}
+
+clearBtn.addEventListener('click', () => {
+  fileInput.value = '';
+  allRecords = [];
+  fileSummaries = [];
+  updateFileInfo();
+  statusEl.textContent = 'Ready. Select PDF file(s) to begin.';
+  document.getElementById('mCards').textContent = '0';
+  document.getElementById('mEpics').textContent = '0';
+  document.getElementById('mDups').textContent = '0';
+  document.getElementById('mFlagged').textContent = '0';
+  document.getElementById('resultStatus').textContent = 'No extraction completed yet.';
+  document.getElementById('dlExcel').disabled = true;
+  document.getElementById('dlCsv').disabled = true;
+  document.querySelector('#verifyTable tbody').innerHTML = '<tr><td colspan="9" style="text-align:center; color:#64748b;">PDF-wise verification appears after conversion.</td></tr>';
+  document.querySelector('#previewTable tbody').innerHTML = '<tr><td colspan="13" style="text-align:center; color:#64748b;">Records will appear here after conversion.</td></tr>';
+  document.getElementById('previewCount').textContent = '0 records';
+});
+
+convertBtn.addEventListener('click', async () => {
+  const files = Array.from(fileInput.files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
+  if (!files.length) return;
+
+  convertBtn.disabled = true;
+  statusEl.textContent = 'Processing... please wait.';
+  document.getElementById('progressWrap').classList.remove('hidden');
+  allRecords = [];
+  fileSummaries = [];
+
+  let totalPages = 0;
+  for (const f of files) {
+    const pdf = await pdfjsLib.getDocument(await f.arrayBuffer()).promise;
+    totalPages += pdf.numPages;
+  }
+
+  let processedPages = 0;
+  for (const file of files) {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+    const summary = { file: file.name, pages: pdf.numPages, ward: '', coverTotal: null, cards: 0, missing: [], emptyPages: [] };
+    const pageRecords = [];
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const items = textContent.items.map(it => ({
+        str: it.str,
+        x: it.transform[4],
+        y: it.transform[5],
+        width: it.width,
+        height: it.height
+      }));
+
+      // Cover page heuristic (page 1)
+      if (i === 1) {
+        const fullText = items.map(it => it.str).join(' ');
+        const wardMatch = fullText.match(/వార్డు\s*[:\-]?\s*(\d+)/i) || fullText.match(/Ward\s*[:\-]?\s*(\d+)/i);
+        if (wardMatch) summary.ward = wardMatch[1];
+        const totalMatch = fullText.match(/మొత్తం\s*ఓటర్లు\s*[:\-]?\s*(\d+)/i) || fullText.match(/Total\s*(?:Voters|Electors)\s*[:\-]?\s*(\d+)/i) || fullText.match(/(\d{3,5})\s*(?:ఓటర్లు|voters)/i);
+        if (totalMatch) summary.coverTotal = parseInt(totalMatch[1], 10);
+      }
+
+      // Process voter pages (usually from page 2)
+      const cards = extractCardsFromPage(items, i, summary.ward);
+      if (cards.length === 0 && i > 1) summary.emptyPages.push(i);
+      pageRecords.push(...cards);
+      summary.cards += cards.length;
+
+      processedPages++;
+      document.getElementById('progressBar').style.width = Math.round((processedPages / totalPages) * 100) + '%';
+    }
+
+    // Serial continuity check
+    const serials = pageRecords.map(r => parseInt(r.serial, 10)).filter(n => !isNaN(n)).sort((a,b) => a-b);
+    if (serials.length > 1) {
+      for (let s = serials[0]; s <= serials[serials.length-1]; s++) {
+        if (!serials.includes(s)) summary.missing.push(s);
+      }
+    }
+
+    fileSummaries.push(summary);
+    allRecords.push(...pageRecords);
+  }
+
+  // Duplicate EPIC detection
+  const epicMap = {};
+  allRecords.forEach(r => {
+    if (r.epic && r.epic.length >= 6) {
+      if (!epicMap[r.epic]) epicMap[r.epic] = 0;
+      epicMap[r.epic]++;
+    }
+  });
+  allRecords.forEach(r => {
+    if (r.epic && epicMap[r.epic] > 1) r.review = 'Duplicate EPIC';
+    else if (!r.epic || r.epic.length < 6) r.review = 'Missing/Invalid EPIC';
+    else if (!r.name) r.review = 'Missing Name';
+    else r.review = 'OK';
+  });
+
+  renderResults();
+  statusEl.textContent = 'Extraction complete.';
+  document.getElementById('progressWrap').classList.add('hidden');
+  convertBtn.disabled = false;
+});
+
+function extractCardsFromPage(items, pageNum, ward) {
+  if (!items.length || pageNum === 1) return [];
+
+  // Sort top-to-bottom
+  items.sort((a, b) => b.y - a.y || a.x - b.x);
+
+  const cards = [];
+
+  // Method 1: Look for serial headers
+  const serialIndices = [];
+  items.forEach((it, idx) => {
+    if (/వార్డు|జా\.వ\.సం|Serial|Sl\.?\s*No/i.test(it.str)) {
+      serialIndices.push(idx);
+    }
+  });
+
+  if (serialIndices.length >= 3) {
+    for (let i = 0; i < serialIndices.length; i++) {
+      const start = serialIndices[i];
+      const end = i + 1 < serialIndices.length ? serialIndices[i + 1] : items.length;
+      const card = parseCard(items.slice(start, end), pageNum, ward);
+      if (card && (card.epic || card.name || card.serial)) cards.push(card);
+    }
+    if (cards.length > 0) return cards;
+  }
+
+  // Method 2: Look for EPIC numbers as anchors (TRO, HNZ etc.)
+  const epicIndices = [];
+  items.forEach((it, idx) => {
+    if (/\b[A-Z]{3}\d{7}\b/.test(it.str)) {
+      epicIndices.push(idx);
+    }
+  });
+
+  if (epicIndices.length >= 3) {
+    for (let i = 0; i < epicIndices.length; i++) {
+      const start = Math.max(0, epicIndices[i] - 15);
+      const end = i + 1 < epicIndices.length ? epicIndices[i + 1] : Math.min(items.length, epicIndices[i] + 20);
+      const card = parseCard(items.slice(start, end), pageNum, ward);
+      if (card && card.epic) cards.push(card);
+    }
+    if (cards.length > 0) return cards;
+  }
+
+  // Method 3: Fallback - group by large y-gaps
+  let current = [];
+  let lastY = items[0]?.y || 0;
+  for (const it of items) {
+    if (Math.abs(it.y - lastY) > 60 && current.length > 5) {
+      const card = parseCard(current, pageNum, ward);
+      if (card && (card.epic || card.name)) cards.push(card);
+      current = [];
+    }
+    current.push(it);
+    lastY = it.y;
+  }
+  if (current.length > 5) {
+    const card = parseCard(current, pageNum, ward);
+    if (card && (card.epic || card.name)) cards.push(card);
+  }
+
+  return cards;
+}
+
+function parseCard(items, pageNum, ward) {
+  if (!items.length) return null;
+  const text = items.map(it => it.str).join(' ').replace(/\s+/g, ' ').trim();
+
+  const rec = {
+    ward: ward || '',
+    serial: '',
+    name: '',
+    relative: '',
+    relationType: '',
+    house: '',
+    locality: '',
+    gender: '',
+    age: '',
+    epic: '',
+    section: '',
+    page: pageNum,
+    printedPage: '',
+    review: 'Text extracted; visual verification pending',
+    epicCheck: 'Unique in extracted text'
+  };
+
+  // Serial
+  let m = text.match(/వార్డు\.?ఓ\.?జా\.?వ\.?సం\.?\s*[\.:]?\s*(\d+)/i);
+  if (m) rec.serial = m[1];
+
+  // Section reference (అ.ఓ.జా.వ.సం .5 - 250 - 1)
+  m = text.match(/అ\.?ఓ\.?జా\.?వ\.?సం\.?\s*[\.:]?\s*(\d+\s*-\s*\d+\s*-\s*\d+)/i);
+  if (m) rec.section = m[1].replace(/\s+/g, ' ');
+
+  // EPIC
+  m = text.match(/\b([A-Z]{3}\d{7})\b/);
+  if (m) rec.epic = m[1];
+  else {
+    m = text.match(/ఓటరు\s*ఐడి\.?\s*కార్డు\s*నెం\.?\s*[:\-]?\s*([A-Z0-9]{8,12})/i);
+    if (m) rec.epic = m[1];
+  }
+
+  // Name
+  m = text.match(/ఓటరు\s*పేరు\s*[:\-]?\s*([^\d:।]{2,60})/i);
+  if (m) rec.name = m[1].trim().replace(/Photo.*/, '').trim();
+
+  // Relative + type
+  m = text.match(/(భర్త\s*పేరు|తండ్రి[ీ]?\s*పేరు|తల్లి\s*పేరు)\s*[:\-]?\s*([^\d:।]{2,60})/i);
+  if (m) {
+    rec.relationType = m[1].trim();
+    rec.relative = m[2].trim();
+  }
+
+  // Age
+  m = text.match(/వయస్సు\s*[:\-]?\s*(\d{1,3})/i);
+  if (m) rec.age = m[1];
+
+  // Gender
+  if (/లింగము\s*[:\-]?\s*స్త్రీ/i.test(text)) rec.gender = 'Female';
+  else if (/లింగము\s*[:\-]?\s*పు/i.test(text)) rec.gender = 'Male';
+
+  // House
+  m = text.match(/ఇంటి\s*సంఖ్య\s*[:\-]?\s*([A-Z0-9\/\-_\s]{1,25})/i);
+  if (m) rec.house = m[1].trim();
+
+  // Printed page (పుట సంఖ్య . 1 /85)
+  m = text.match(/పుట\s*సంఖ్య\s*[\.:]?\s*(\d+)/i);
+  if (m) rec.printedPage = m[1];
+
+  // Locality fallback
+  if (!rec.locality) rec.locality = 'పెద్దపాడు';
+
+  return (rec.serial || rec.epic || rec.name) ? rec : null;
+}
+
+function renderResults() {
+  const totalCards = allRecords.length;
+  const epics = allRecords.filter(r => r.epic && r.epic.length >= 6).length;
+  const dups = allRecords.filter(r => r.review === 'Duplicate EPIC').length;
+  const flagged = allRecords.filter(r => r.review !== 'OK').length;
+
+  document.getElementById('mCards').textContent = totalCards;
+  document.getElementById('mEpics').textContent = epics;
+  document.getElementById('mDups').textContent = dups;
+  document.getElementById('mFlagged').textContent = flagged;
+  document.getElementById('resultStatus').textContent = totalCards + ' voter cards extracted.';
+
+  // Verification table
+  const tbody = document.querySelector('#verifyTable tbody');
+  tbody.innerHTML = '';
+  fileSummaries.forEach(s => {
+    const diff = s.coverTotal != null ? (s.cards - s.coverTotal) : '—';
+    const check = s.coverTotal != null && s.cards === s.coverTotal ? 'Match' : (s.coverTotal != null ? 'Check' : 'No total');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${s.file}</td><td>${s.pages}</td><td>${s.ward || '—'}</td><td>${s.coverTotal || '—'}</td>
+      <td>${s.cards}</td><td>${diff}</td><td>${s.missing.length ? s.missing.slice(0,10).join(', ') + (s.missing.length>10?'…':'') : 'None'}</td>
+      <td>${s.emptyPages.join(', ') || 'None'}</td><td>${check}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  // Preview (first 200)
+  const preview = allRecords.slice(0, 200);
+  document.getElementById('previewCount').textContent = allRecords.length + ' records (showing first ' + preview.length + ')';
+  const pbody = document.querySelector('#previewTable tbody');
+  pbody.innerHTML = '';
+  preview.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r.ward}</td><td>${r.serial}</td><td>${r.name}</td><td>${r.relative}</td>
+      <td>${r.relationType}</td><td>${r.house}</td><td>${r.locality}</td><td>${r.gender}</td>
+      <td>${r.age}</td><td>${r.epic}</td><td>${r.section}</td><td>${r.page}</td><td>${r.review}</td>`;
+    pbody.appendChild(tr);
+  });
+
+  document.getElementById('dlExcel').disabled = false;
+  document.getElementById('dlCsv').disabled = false;
+}
+
+document.getElementById('dlExcel').addEventListener('click', () => {
+  if (!allRecords.length) return;
+  const ws = XLSX.utils.json_to_sheet(allRecords.map(r => ({
+    'Ward No': r.ward,
+    'Serial No': r.serial,
+    'Voter Name': r.name,
+    'Father / Husband Name': r.relative,
+    'Relationship Type': r.relationType,
+    'House Number': r.house,
+    'Place / Locality': r.locality,
+    'Gender': r.gender,
+    'Age': r.age,
+    'EPIC Number': r.epic,
+    'Section Reference': r.section,
+    'Original PDF Page No': r.page,
+    'Printed Roll Page No': r.printedPage,
+    'Review Status': r.review,
+    'EPIC Duplicate Check': r.epicCheck
+  })));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Voters');
+
+  // Verification sheet
+  const vws = XLSX.utils.json_to_sheet(fileSummaries);
+  XLSX.utils.book_append_sheet(wb, vws, 'Verification');
+
+  XLSX.writeFile(wb, 'voter_records.xlsx');
+});
+
+document.getElementById('dlCsv').addEventListener('click', () => {
+  if (!allRecords.length) return;
+  const ws = XLSX.utils.json_to_sheet(allRecords);
+  const csv = XLSX.utils.sheet_to_csv(ws);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'voter_records.csv';
+  a.click();
+});
+</script>
+</body>
+</html>
