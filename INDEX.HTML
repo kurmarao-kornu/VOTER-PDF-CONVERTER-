@@ -1,0 +1,257 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voter PDF to Excel Converter</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #f1f5f9;
+  margin: 0;
+  padding: 25px;
+}
+.container {
+  max-width: 750px;
+  margin: auto;
+  background: white;
+  padding: 25px;
+  border-radius: 14px;
+  box-shadow: 0 3px 15px #ccc;
+}
+header {
+  background: #17365d;
+  color: white;
+  padding: 22px;
+  text-align: center;
+  border-radius: 10px;
+}
+h2 { text-align: center; }
+.upload {
+  border: 2px dashed #2563eb;
+  padding: 30px;
+  text-align: center;
+  border-radius: 10px;
+  margin-top: 25px;
+}
+input { margin: 15px; }
+button {
+  background: #166534;
+  color: white;
+  padding: 13px 25px;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 16px;
+}
+button:disabled { background: #999; }
+#status {
+  margin-top: 20px;
+  white-space: pre-wrap;
+  line-height: 1.7;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<header>
+<h1>VOTER PDF CONVERTER</h1>
+<p>SRIKAKULAM MUNICIPAL CORPORATION</p>
+</header>
+
+<h2>PDF to Excel Conversion</h2>
+
+<div class="upload">
+<h3>Select Your Electoral PDF Files</h3>
+<input type="file" id="pdfFiles" accept=".pdf,application/pdf" multiple>
+<p>You can select multiple PDF files.</p>
+</div>
+
+<br>
+<button id="convertBtn" onclick="convertPDFs()">
+Convert to Excel
+</button>
+
+<div id="status">Ready to convert.</div>
+
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+function clean(value) {
+ return value.replace(/\s+/g, " ").trim();
+}
+
+function getField(block, labels) {
+ for (const label of labels) {
+   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+   const regex = new RegExp(
+     escaped + "\\s*:?\\s*([^\\n]+)", "i"
+   );
+   const match = block.match(regex);
+   if (match) return clean(match[1]);
+ }
+ return "";
+}
+
+async function extractPageText(page) {
+ const content = await page.getTextContent();
+ const items = content.items.filter(item => item.str.trim());
+
+ const lines = [];
+
+ for (const item of items) {
+   const y = item.transform[5];
+   let line = lines.find(l => Math.abs(l.y - y) < 2.5);
+
+   if (!line) {
+     line = { y: y, items: [] };
+     lines.push(line);
+   }
+   line.items.push(item);
+ }
+
+ lines.sort((a, b) => b.y - a.y);
+
+ return lines.map(line => {
+   line.items.sort((a, b) =>
+     a.transform[4] - b.transform[4]
+   );
+   return line.items.map(item => item.str).join(" ");
+ }).join("\n");
+}
+
+function parseVoters(text, pageWard) {
+ const results = [];
+
+ const blocks = text.split("వార్డు.ఓ.జా.వ.సం.");
+
+ for (let block of blocks.slice(1)) {
+
+   const serialMatch = block.match(/^\s*\.?\s*(\d+)/);
+   if (!serialMatch) continue;
+
+   const serial = serialMatch[1];
+
+   const name = getField(block, ["ఓటరు పేరు"]);
+
+   const father = getField(block, ["తండ్రి పేరు"]);
+   const husband = getField(block, ["భర్త పేరు"]);
+
+   const house = getField(block, ["ఇంటి సంఖ్య"]);
+
+   const epicMatch = block.match(/\b[A-Z]{3}\d{7}\b/);
+   const epic = epicMatch ? epicMatch[0] : "";
+
+   const ageMatch = block.match(/వయస్సు[\s\S]{0,30}?(\d{1,3})/);
+   const age = ageMatch ? ageMatch[1] : "";
+
+   const genderMatch = block.match(/లింగము\s*:?\s*(స్త్రీ|పు)/);
+   const gender = genderMatch
+     ? (genderMatch[1] === "పు" ? "Male" : "Female")
+     : "";
+
+   if (!name && !epic) continue;
+
+   results.push({
+     "Ward Number": pageWard,
+     "Serial Number": serial,
+     "Voter Name": name,
+     "Father Name": father,
+     "Husband Name": husband,
+     "House Number": house,
+     "EPIC Number": epic,
+     "Age": age,
+     "Gender": gender
+   });
+ }
+
+ return results;
+}
+
+async function convertPDFs() {
+ const input = document.getElementById("pdfFiles");
+ const button = document.getElementById("convertBtn");
+ const status = document.getElementById("status");
+
+ const files = Array.from(input.files);
+
+ if (!files.length) {
+   alert("Please select PDF files first.");
+   return;
+ }
+
+ button.disabled = true;
+ status.textContent = "Starting conversion...\n";
+
+ try {
+   for (const file of files) {
+     if (!file.name.toLowerCase().endsWith(".pdf")) continue;
+
+     status.textContent += "\nProcessing: " + file.name;
+
+     const buffer = await file.arrayBuffer();
+
+     const pdf = await pdfjsLib.getDocument({
+       data: new Uint8Array(buffer)
+     }).promise;
+
+     let allVoters = [];
+
+     for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
+       const page = await pdf.getPage(pageNo);
+       const text = await extractPageText(page);
+
+       const wardMatch = text.match(/వార్డు.{0,25}?:\s*(\d+)/);
+       const ward = wardMatch ? wardMatch[1] : "";
+
+       const voters = parseVoters(text, ward);
+       allVoters.push(...voters);
+     }
+
+     if (!allVoters.length) {
+       status.textContent +=
+         "\nNo voter records detected. Please check this PDF.";
+       continue;
+     }
+
+     const worksheet = XLSX.utils.json_to_sheet(allVoters);
+     worksheet["!cols"] = [
+       {wch:12}, {wch:12}, {wch:30},
+       {wch:28}, {wch:28}, {wch:18},
+       {wch:18}, {wch:10}, {wch:12}
+     ];
+
+     const workbook = XLSX.utils.book_new();
+     XLSX.utils.book_append_sheet(
+       workbook, worksheet, "Voter List"
+     );
+
+     const outputName =
+       file.name.replace(/\.pdf$/i, "") + ".xlsx";
+
+     XLSX.writeFile(workbook, outputName);
+
+     status.textContent +=
+       "\nCompleted: " + outputName +
+       "\nVoter records: " + allVoters.length;
+   }
+
+ } catch (error) {
+   status.textContent += "\nERROR: " + error.message;
+ } finally {
+   button.disabled = false;
+ }
+}
+</script>
+</body>
+</html>
